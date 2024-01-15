@@ -1,109 +1,108 @@
 //
 //  GameScene.swift
-//  AvoidingThorns
+//  dont-touch-the-spikes
 //
-//  Created by Pedro Franco on 14/01/24.
+//  Created by Pedro Franco on 19/12/23.
 //
 
 import SpriteKit
 import GameplayKit
 
-class GameScene: SKScene {
+class GameScene: SKScene, SKPhysicsContactDelegate {
+    // Nodes
+    var bird = SKSpriteNode()
+    var spike = SKSpriteNode() 
+    var bottomFloor = SKSpriteNode()
+    var topRoof = SKSpriteNode()
+    var rightWall = SKSpriteNode()
+    var leftWall = SKSpriteNode()
     
-    var entities = [GKEntity]()
-    var graphs = [String : GKGraph]()
+    // Declare constants
+    var jumpValueX = 0
+    var jumpValueY = 0
+    var screenWidth = 0.0
+    var screenHeight = 0.0
     
-    private var lastUpdateTime : TimeInterval = 0
-    private var label : SKLabelNode?
-    private var spinnyNode : SKShapeNode?
+    // Aux
+    var side = true
+    var lose = false
     
     override func sceneDidLoad() {
-
-        self.lastUpdateTime = 0
+        self.physicsWorld.contactDelegate = self
         
-        // Get label node from scene and store it for use later
-        self.label = self.childNode(withName: "//helloLabel") as? SKLabelNode
-        if let label = self.label {
-            label.alpha = 0.0
-            label.run(SKAction.fadeIn(withDuration: 2.0))
+        Constants.shared.setScene(self)
+        
+        jumpValueX = Constants.shared.getJumpValueX()
+        jumpValueY = Constants.shared.getJumpValueY()
+        screenWidth = Constants.shared.getScreenWidth()
+        screenHeight = Constants.shared.getScreenHeight()
+       
+        setupBird()
+        
+        setupBottomFloor()
+        
+        setupTopRoof()
+        
+        setupRightWall()
+        
+        setupLeftWall()
+    }
+    
+    func didBegin(_ contact: SKPhysicsContact) {
+        var firstBody = SKPhysicsBody()
+        var secondBody = SKPhysicsBody()
+        
+        if contact.bodyA.node?.name == "Bird" {
+            firstBody = contact.bodyA
+            secondBody = contact.bodyB
+        } else {
+            firstBody = contact.bodyB
+            secondBody = contact.bodyA
         }
         
-        // Create shape node to use during mouse interaction
-        let w = (self.size.width + self.size.height) * 0.05
-        self.spinnyNode = SKShapeNode.init(rectOf: CGSize.init(width: w, height: w), cornerRadius: w * 0.3)
-        
-        if let spinnyNode = self.spinnyNode {
-            spinnyNode.lineWidth = 2.5
+        switch (firstBody.node?.name == "Bird") {
+        case secondBody.node?.name == "RightWall":
+            applyImpulse(positiveX: false, positiveY: true)
+            changeSide()
             
-            spinnyNode.run(SKAction.repeatForever(SKAction.rotate(byAngle: CGFloat(Double.pi), duration: 1)))
-            spinnyNode.run(SKAction.sequence([SKAction.wait(forDuration: 0.5),
-                                              SKAction.fadeOut(withDuration: 0.5),
-                                              SKAction.removeFromParent()]))
-        }
-    }
-    
-    
-    func touchDown(atPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.green
-            self.addChild(n)
-        }
-    }
-    
-    func touchMoved(toPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.blue
-            self.addChild(n)
-        }
-    }
-    
-    func touchUp(atPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.red
-            self.addChild(n)
+        case secondBody.node?.name == "LeftWall":
+            applyImpulse(positiveX: true, positiveY: true)
+            changeSide()
+            
+        default:
+            scene?.removeAllActions()
+            runGameOverScene()
         }
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if let label = self.label {
-            label.run(SKAction.init(named: "Pulse")!, withKey: "fadeInOut")
+        guard !lose else { return }
+        
+        for touch in touches {
+            bird.physicsBody?.isDynamic = true
+            side ? applyImpulse(positiveX: true, positiveY: true) : applyImpulse(positiveX: false, positiveY: true)
+            setupSpike()
         }
+    }
         
-        for t in touches { self.touchDown(atPoint: t.location(in: self)) }
-    }
-    
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchMoved(toPoint: t.location(in: self)) }
-    }
-    
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchUp(atPoint: t.location(in: self)) }
-    }
-    
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchUp(atPoint: t.location(in: self)) }
-    }
-    
-    
-    override func update(_ currentTime: TimeInterval) {
-        // Called before each frame is rendered
+    func applyImpulse(positiveX: Bool, positiveY: Bool) {
+        var jumpValX = Double(jumpValueX)
+        var jumpValY = Double(jumpValueY)
         
-        // Initialize _lastUpdateTime if it has not already been
-        if (self.lastUpdateTime == 0) {
-            self.lastUpdateTime = currentTime
+        bird.physicsBody?.velocity = CGVector(dx: 0, dy: 0)
+        
+        let impulseDirection = positiveX ? CGVector(dx: jumpValX, dy: jumpValY) : CGVector(dx: -jumpValX, dy: jumpValY)
+        
+        bird.physicsBody?.applyImpulse(impulseDirection)
+    }
+    
+    func changeSide() {
+        side.toggle()
+    }
+    
+    func runGameOverScene() {
+        if let view = self.view {
+            ChangeScreen.changeScreen(sceneView: view, screen: "GameOverScene")
         }
-        
-        // Calculate time since last update
-        let dt = currentTime - self.lastUpdateTime
-        
-        // Update entities
-        for entity in self.entities {
-            entity.update(deltaTime: dt)
-        }
-        
-        self.lastUpdateTime = currentTime
     }
 }
